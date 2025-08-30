@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mush</title>
+<style>
+body { margin:0; font-family: Arial, sans-serif; background:#121212; color:#fff; }
+#root { display:flex; justify-content:center; }
+.app { width:100%; max-width:480px; }
+header { padding:15px; text-align:center; background:#1db954; border-bottom:1px solid #0d9343; }
+header h1 { margin:0; font-size:1.8rem; }
+main { padding:15px; }
+.player { display:flex; flex-direction:column; align-items:center; margin-bottom:20px; transition: opacity 0.5s ease; }
+.player img { width:100%; max-width:300px; border-radius:10px; margin-bottom:10px; }
+.player-info { text-align:center; transition: opacity 0.5s ease; }
+.playlist { display:flex; flex-direction:column; gap:10px; }
+.song { display:flex; gap:10px; align-items:center; padding:10px; background:#282828; border-radius:8px; cursor:pointer; transition:0.2s; }
+.song:hover { background:#1db954; }
+.song img { width:50px; height:50px; border-radius:5px; }
+.song div { flex:1; }
+footer { text-align:center; padding:10px; font-size:0.8rem; color:#aaa; }
+.mini-player { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:95%; max-width:480px; background:#1db954; color:#fff; display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px 10px 0 0; cursor:pointer; }
+.mini-player img { width:50px; height:50px; border-radius:5px; }
+.mini-player-info { flex:1; }
+.controls { display:flex; gap:10px; align-items:center; margin-top:10px; }
+.progress-container { width:100%; height:8px; background:#282828; border-radius:4px; cursor:pointer; margin-top:10px; }
+.progress { height:100%; background:#1db954; border-radius:4px; width:0%; }
+.volume-slider { width:100px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+<script type="text/babel">
+
+const { useState, useEffect, useRef } = React;
+
+const githubUser = 'LightingDev';
+const repo = 'mush';
+const branch = 'main';
+
+function App() {
+  const [songs, setSongs] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const audioRef = useRef(null);
+  const playerRef = useRef(null);
+
+  useEffect(() => {
+    async function fetchSongs() {
+      const url = `https://api.github.com/repos/${githubUser}/${repo}/contents/songs?ref=${branch}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const mp3s = data.filter(file => file.name.endsWith('.mp3'));
+      setSongs(mp3s);
+    }
+    fetchSongs();
+  }, []);
+
+  useEffect(() => {
+    if(!audioRef.current) return;
+    const audio = audioRef.current;
+
+    const updateProgress = () => {
+      if(audio.duration) setProgress((audio.currentTime/audio.duration)*100);
+    };
+
+    const handleEnd = () => handleNext();
+
+    audio.addEventListener('timeupdate', updateProgress);
+    audio.addEventListener('ended', handleEnd);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateProgress);
+      audio.removeEventListener('ended', handleEnd);
+    };
+  }, [currentIndex, songs]);
+
+  const handleNext = () => {
+    if(songs.length===0) return;
+    fadeOutPlayer(()=>{
+      setCurrentIndex(prev => (prev===null||prev===songs.length-1)?0:prev+1);
+      fadeInPlayer();
+    });
+  };
+
+  const handlePrev = () => {
+    if(songs.length===0) return;
+    fadeOutPlayer(()=>{
+      setCurrentIndex(prev => (prev===null||prev===0)?songs.length-1:prev-1);
+      fadeInPlayer();
+    });
+  };
+
+  const fadeOutPlayer = (callback) => {
+    if(playerRef.current){
+      playerRef.current.style.opacity = 0;
+      setTimeout(callback, 400);
+    } else callback();
+  };
+
+  const fadeInPlayer = () => {
+    if(playerRef.current){
+      playerRef.current.style.opacity = 1;
+    }
+  };
+
+  const handleSwipe = (e) => {
+    const touch = e.changedTouches[0];
+    if(!touchStartRef.current) return;
+    const diffX = touch.clientX - touchStartRef.current;
+    if(diffX > 50) handlePrev();
+    if(diffX < -50) handleNext();
+    touchStartRef.current = null;
+  };
+
+  const handleSeek = (e) => {
+    const rect = e.target.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percent = clickX / rect.width;
+    if(audioRef.current) audioRef.current.currentTime = percent * audioRef.current.duration;
+  };
+
+  const handleVolumeChange = (e) => {
+    setVolume(e.target.value);
+    if(audioRef.current) audioRef.current.volume = e.target.value;
+  };
+
+  const touchStartRef = useRef(null);
+  const currentSong = currentIndex!==null? songs[currentIndex] : null;
+  const coverUrl = currentSong ? `https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/images/${currentSong.name.replace('.mp3','.jpg')}` : '';
+
+  return (
+    <div className="app"
+         onTouchStart={(e)=>touchStartRef.current = e.touches[0].clientX}
+         onTouchEnd={handleSwipe}>
+      <header><h1>Mush</h1></header>
+      <main>
+        <div className="player" ref={playerRef} style={{opacity:1, transition:'opacity 0.5s'}}>
+          {currentSong && <img src={coverUrl} alt="Cover" onError={(e)=>e.target.src='https://via.placeholder.com/300'} />}
+          <div className="player-info">
+            <h2>{currentSong?currentSong.name.replace('.mp3',''):'Select a song'}</h2>
+            <p>Unknown Artist</p>
+          </div>
+          {currentSong && <audio ref={audioRef} src={`https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/songs/${currentSong.name}`} controls autoPlay />}
+          {currentSong && 
+            <div className="controls">
+              <button onClick={handlePrev}>Prev</button>
+              <div className="progress-container" onClick={handleSeek}>
+                <div className="progress" style={{width:`${progress}%`}}></div>
+              </div>
+              <button onClick={handleNext}>Next</button>
+              <input type="range" min="0" max="1" step="0.01" value={volume} onChange={handleVolumeChange} className="volume-slider"/>
+            </div>
+          }
+        </div>
+
+        <div className="playlist">
+          {songs.map((song, idx)=>(
+            <div key={song.sha} className="song" onClick={()=>setCurrentIndex(idx)}>
+              <img src={`https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/images/${song.name.replace('.mp3','.jpg')}`} 
+                   onError={(e)=>e.target.src='https://via.placeholder.com/50'} />
+              <div>
+                <p>{song.name.replace('.mp3','')}</p>
+                <p style={{fontSize:'0.8rem', color:'#aaa'}}>Unknown Artist</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+
+      {currentSong && 
+        <div className="mini-player" onClick={()=>audioRef.current.scrollIntoView({behavior:'smooth'})}>
+          <img src={coverUrl} />
+          <div className="mini-player-info">
+            <p>{currentSong.name.replace('.mp3','')}</p>
+          </div>
+          <button onClick={(e)=>{e.stopPropagation(); handlePrev();}}>Prev</button>
+          <button onClick={(e)=>{e.stopPropagation(); handleNext();}}>Next</button>
+        </div>
+      }
+
+      <footer>&copy; 2025 Mush</footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
