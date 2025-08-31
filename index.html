@@ -36,15 +36,15 @@ footer { text-align:center; padding:10px; font-size:0.8rem; color:#aaa; }
 <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
 
 <script type="text/babel">
+
 const { useState, useEffect, useRef } = React;
 
-const githubUser = 'LightingDev';
-const repo = 'mush';
+const githubUser = 'YOUR_GITHUB_USERNAME';
+const repo = 'YOUR_REPO_NAME';
 const branch = 'main';
 
 function App() {
   const [songs, setSongs] = useState([]);
-  const [metadata, setMetadata] = useState({});
   const [currentIndex, setCurrentIndex] = useState(null);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(1);
@@ -52,19 +52,14 @@ function App() {
   const playerRef = useRef(null);
 
   useEffect(() => {
-    async function fetchData() {
-      // Fetch songs
-      const res = await fetch(`https://api.github.com/repos/${githubUser}/${repo}/contents/songs?ref=${branch}`);
+    async function fetchSongs() {
+      const url = `https://api.github.com/repos/${githubUser}/${repo}/contents/songs?ref=${branch}`;
+      const res = await fetch(url);
       const data = await res.json();
-      const mp3s = data.filter(f => f.name.endsWith('.mp3'));
+      const mp3s = data.filter(file => file.name.endsWith('.mp3'));
       setSongs(mp3s);
-
-      // Fetch metadata
-      const metaRes = await fetch(`https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/metadata.json`);
-      const metaData = await metaRes.json();
-      setMetadata(metaData);
     }
-    fetchData();
+    fetchSongs();
   }, []);
 
   useEffect(() => {
@@ -86,31 +81,73 @@ function App() {
     };
   }, [currentIndex, songs]);
 
-  const fadeOutPlayer = callback => { if(playerRef.current){playerRef.current.style.opacity=0; setTimeout(callback,400);} else callback(); };
-  const fadeInPlayer = () => { if(playerRef.current) playerRef.current.style.opacity=1; };
-  const handleNext = () => { if(songs.length===0) return; fadeOutPlayer(()=>{ setCurrentIndex(prev => (prev===null||prev===songs.length-1)?0:prev+1); fadeInPlayer(); }); };
-  const handlePrev = () => { if(songs.length===0) return; fadeOutPlayer(()=>{ setCurrentIndex(prev => (prev===null||prev===0)?songs.length-1:prev-1); fadeInPlayer(); }); };
+  const handleNext = () => {
+    if(songs.length===0) return;
+    fadeOutPlayer(()=>{
+      setCurrentIndex(prev => (prev===null||prev===songs.length-1)?0:prev+1);
+      fadeInPlayer();
+    });
+  };
+
+  const handlePrev = () => {
+    if(songs.length===0) return;
+    fadeOutPlayer(()=>{
+      setCurrentIndex(prev => (prev===null||prev===0)?songs.length-1:prev-1);
+      fadeInPlayer();
+    });
+  };
+
+  const fadeOutPlayer = (callback) => {
+    if(playerRef.current){
+      playerRef.current.style.opacity = 0;
+      setTimeout(callback, 400);
+    } else callback();
+  };
+
+  const fadeInPlayer = () => {
+    if(playerRef.current){
+      playerRef.current.style.opacity = 1;
+    }
+  };
+
+  const handleSwipe = (e) => {
+    const touch = e.changedTouches[0];
+    if(!touchStartRef.current) return;
+    const diffX = touch.clientX - touchStartRef.current;
+    if(diffX > 50) handlePrev();
+    if(diffX < -50) handleNext();
+    touchStartRef.current = null;
+  };
+
+  const handleSeek = (e) => {
+    const rect = e.target.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percent = clickX / rect.width;
+    if(audioRef.current) audioRef.current.currentTime = percent * audioRef.current.duration;
+  };
+
+  const handleVolumeChange = (e) => {
+    setVolume(e.target.value);
+    if(audioRef.current) audioRef.current.volume = e.target.value;
+  };
 
   const touchStartRef = useRef(null);
-  const handleSwipe = e => { const touch = e.changedTouches[0]; if(!touchStartRef.current) return; const diffX = touch.clientX - touchStartRef.current; if(diffX>50) handlePrev(); if(diffX<-50) handleNext(); touchStartRef.current=null; };
-  const handleSeek = e => { const rect = e.target.getBoundingClientRect(); const clickX = e.clientX - rect.left; const percent = clickX / rect.width; if(audioRef.current) audioRef.current.currentTime = percent * audioRef.current.duration; };
-  const handleVolumeChange = e => { setVolume(e.target.value); if(audioRef.current) audioRef.current.volume = e.target.value; };
-
-  const currentSong = currentIndex!==null ? songs[currentIndex] : null;
-  const songMeta = currentSong ? metadata[currentSong.name] || {} : {};
-  const coverUrl = currentSong ? `https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/images/${songMeta.cover || currentSong.name.replace('.mp3','.png')}` : 'https://via.placeholder.com/300';
+  const currentSong = currentIndex!==null? songs[currentIndex] : null;
+  const coverUrl = currentSong 
+      ? `https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/images/${currentSong.name.replace('.mp3','.jpg')}`
+      : 'https://via.placeholder.com/300';
 
   return (
     <div className="app"
-         onTouchStart={e=>touchStartRef.current=e.touches[0].clientX}
+         onTouchStart={(e)=>touchStartRef.current = e.touches[0].clientX}
          onTouchEnd={handleSwipe}>
       <header>Mush</header>
       <main>
         <div className="player" ref={playerRef}>
-          <img src={coverUrl} alt="Cover" onError={e=>e.target.src='https://via.placeholder.com/300'} />
+          <img src={coverUrl} alt="Cover" onError={(e)=>{e.target.src='https://via.placeholder.com/300'}} />
           <div className="player-info">
-            <h2>{songMeta.title || (currentSong ? currentSong.name.replace('.mp3','') : 'Select a song')}</h2>
-            <p>{songMeta.artist || 'Unknown Artist'} {songMeta.album ? `- ${songMeta.album}` : ''}</p>
+            <h2>{currentSong ? currentSong.name.replace('.mp3','') : 'Select a song'}</h2>
+            <p>Unknown Artist</p>
           </div>
           {currentSong && <audio ref={audioRef} src={`https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/songs/${currentSong.name}`} controls autoPlay />}
           {currentSong && 
@@ -128,11 +165,11 @@ function App() {
         <div className="playlist">
           {songs.map((song, idx)=>(
             <div key={song.sha} className="song" onClick={()=>setCurrentIndex(idx)}>
-              <img src={`https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/images/${(metadata[song.name]?.cover || song.name.replace('.mp3','.png'))}`} 
-                   onError={e=>e.target.src='https://via.placeholder.com/50'} />
+              <img src={`https://raw.githubusercontent.com/${githubUser}/${repo}/${branch}/images/${song.name.replace('.mp3','.jpg')}`} 
+                   onError={(e)=>e.target.src='https://via.placeholder.com/50'} />
               <div>
-                <p>{metadata[song.name]?.title || song.name.replace('.mp3','')}</p>
-                <p style={{fontSize:'0.8rem', color:'#aaa'}}>{metadata[song.name]?.artist || 'Unknown Artist'}</p>
+                <p>{song.name.replace('.mp3','')}</p>
+                <p style={{fontSize:'0.8rem', color:'#aaa'}}>Unknown Artist</p>
               </div>
             </div>
           ))}
@@ -143,10 +180,10 @@ function App() {
         <div className="mini-player" onClick={()=>audioRef.current.scrollIntoView({behavior:'smooth'})}>
           <img src={coverUrl} />
           <div className="mini-player-info">
-            <p>{songMeta.title || currentSong.name.replace('.mp3','')}</p>
+            <p>{currentSong.name.replace('.mp3','')}</p>
           </div>
-          <button onClick={e=>{e.stopPropagation(); handlePrev();}}>Prev</button>
-          <button onClick={e=>{e.stopPropagation(); handleNext();}}>Next</button>
+          <button onClick={(e)=>{e.stopPropagation(); handlePrev();}}>Prev</button>
+          <button onClick={(e)=>{e.stopPropagation(); handleNext();}}>Next</button>
         </div>
       }
 
@@ -156,6 +193,7 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
 </script>
 </body>
 </html>
